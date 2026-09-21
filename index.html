@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>The Duel</title>
+<style>
+:root{
+  --bg:#0d0c0a; --panel:#17150f; --panel2:#201d15; --line:#2c2819; --line2:#413a26;
+  --ink:#f0ebdd; --ink2:#a59d89; --ink3:#6f6857;
+  --gold:#e0a84e; --red:#e05a42; --green:#5fb883; --blue:#5b9fd6;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.5}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.wrap{max-width:860px;margin:0 auto;padding:0 14px 90px}
+a{color:var(--gold)}
+
+header{border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:env(safe-area-inset-top,0px);z-index:30}
+.hd{max-width:860px;margin:0 auto;padding:10px 14px;display:flex;align-items:center;gap:10px}
+.hd h1{margin:0;font-size:16px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
+.hd .sp{flex:1}
+.clock{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--gold);border:1px solid var(--line2);padding:3px 9px;border-radius:99px;white-space:nowrap}
+.clock.late{color:var(--red);border-color:var(--red)}
+nav{display:flex;gap:2px;max-width:860px;margin:0 auto;padding:0 8px;overflow-x:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{background:none;border:none;border-bottom:2px solid transparent;color:var(--ink3);
+  font:inherit;font-size:13px;padding:8px 11px;cursor:pointer;white-space:nowrap}
+nav button[aria-selected="true"]{color:var(--gold);border-bottom-color:var(--gold);font-weight:600}
+
+h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);
+  font-family:ui-monospace,Menlo,monospace;font-weight:500;margin:24px 0 10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 8px;font-size:16px;font-weight:600}
+.muted{color:var(--ink2);font-size:13.5px}
+.tiny{color:var(--ink3);font-size:11.5px;line-height:1.45}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:560px){.vs{grid-template-columns:1fr}}
+
+.fighter{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;position:relative;overflow:hidden}
+.fighter.me{border-color:var(--line2)}
+.fighter .nm{font-size:15px;font-weight:700;letter-spacing:.02em;display:flex;align-items:center;gap:7px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ink3);flex:0 0 auto}
+.dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}
+.dot.late{background:var(--gold)}
+.dot.no{background:var(--red)}
+.big{font-family:ui-monospace,Menlo,monospace;font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1.1}
+.lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);font-family:ui-monospace,Menlo,monospace}
+.st3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.st3 div{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+.st3 b{font-family:ui-monospace,Menlo,monospace;font-size:18px;display:block;line-height:1.2}
+
+button.btn{font:inherit;font-size:13.5px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line2);border-radius:8px;padding:7px 13px;cursor:pointer}
+button.btn:hover{border-color:var(--ink3)}
+button.btn.gold{background:var(--gold);border-color:var(--gold);color:#17150f;font-weight:700}
+button.btn.on{background:var(--green);border-color:var(--green);color:#0d0c0a;font-weight:600}
+button.btn.dim{color:var(--ink3)}
+button.btn:disabled{opacity:.4;cursor:default}
+input,select,textarea{font:inherit;font-size:14px;background:var(--bg);color:var(--ink);
+  border:1px solid var(--line2);border-radius:8px;padding:8px 10px;max-width:100%}
+input[type=number]{width:78px;font-family:ui-monospace,Menlo,monospace}
+textarea{width:100%;resize:vertical}
+label.f{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin-bottom:4px;font-family:ui-monospace,Menlo,monospace}
+
+.proof{width:100%;border-radius:8px;border:1px solid var(--line2);display:block;margin-top:8px;background:var(--panel2)}
+.drop{border:1.5px dashed var(--line2);border-radius:10px;padding:16px;text-align:center;color:var(--ink3);
+  font-size:13px;cursor:pointer;background:var(--panel2)}
+.drop:hover{border-color:var(--gold);color:var(--ink2)}
+
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink3);font-family:ui-monospace,Menlo,monospace;font-weight:500}
+td.num{font-family:ui-monospace,Menlo,monospace;text-align:right}
+.scrollx{overflow-x:auto}
+.pos{color:var(--green)} .neg{color:var(--red)} .zero{color:var(--ink3)}
+
+.hm{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,1fr);grid-auto-columns:11px;gap:3px;overflow-x:auto;padding-bottom:4px}
+.hm i{width:11px;height:11px;border-radius:2px;background:var(--panel2);border:1px solid var(--line);display:block}
+.hm i[data-s="ok"]{background:var(--green);border-color:var(--green)}
+.hm i[data-s="late"]{background:var(--gold);border-color:var(--gold)}
+.hm i[data-s="no"]{background:color-mix(in srgb,var(--red) 55%,var(--panel2));border-color:var(--red)}
+
+.taunt{border-bottom:1px solid var(--line);padding:9px 0}
+.taunt:last-child{border-bottom:none}
+.taunt .w{font-size:11px;color:var(--ink3);font-family:ui-monospace,Menlo,monospace}
+.hide{display:none!important}
+.banner{border-radius:10px;padding:11px 13px;margin-bottom:12px;font-size:13.5px;border:1px solid}
+.banner.win{border-color:var(--green);background:color-mix(in srgb,var(--green) 10%,transparent);color:var(--green)}
+.banner.lose{border-color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent);color:var(--red)}
+.banner.even{border-color:var(--line2);background:var(--panel2);color:var(--ink2)}
+#login{max-width:380px;margin:60px auto;padding:0 16px}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));
+  background:var(--panel2);border:1px solid var(--line2);border-radius:99px;padding:7px 16px;font-size:13px;
+  z-index:60;opacity:0;pointer-events:none;transition:opacity .25s}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div id="login" class="hide">
+  <div class="card">
+    <h3 style="letter-spacing:.14em;text-transform:uppercase;font-size:14px">The Duel</h3>
+    <p class="muted" style="margin-top:0">Two people. One ledger. ₹50 a day on the line.</p>
+    <label class="f">Email</label>
+    <input id="lgEmail" type="email" autocomplete="username" style="width:100%;margin-bottom:10px">
+    <label class="f">Password</label>
+    <input id="lgPass" type="password" autocomplete="current-password" style="width:100%;margin-bottom:12px">
+    <button class="btn gold" id="lgBtn" style="width:100%">Enter the arena</button>
+    <p class="tiny" id="lgErr" style="color:var(--red);min-height:16px;margin:8px 0 0"></p>
+    <p class="tiny" style="margin-top:14px">Accounts are created by you in the Firebase console. See README step 3.</p>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app" class="hide">
+<header>
+  <div class="hd">
+    <h1>The&nbsp;Duel</h1>
+    <span class="sp"></span>
+    <span class="clock" id="clock">—</span>
+    <button class="btn dim" id="outBtn" style="padding:4px 9px;font-size:11px">exit</button>
+  </div>
+  <nav id="nav"></nav>
+</header>
+<div class="wrap">
+  <section id="v-arena"></section>
+  <section id="v-ledger" class="hide"></section>
+  <section id="v-history" class="hide"></section>
+  <section id="v-trash" class="hide"></section>
+</div>
+</div>
+<div id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteField, collection,
+  onSnapshot, query, orderBy, limit, serverTimestamp, addDoc, deleteDoc, getDocs }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDH9wluW5H4ZuIN6_dfWeHzLutMqAXIXZQ",
+  authDomain: "duel-e6faf.firebaseapp.com",
+  projectId: "duel-e6faf",
+  storageBucket: "duel-e6faf.firebasestorage.app",
+  messagingSenderId: "797306569553",
+  appId: "1:797306569553:web:27bfbb8c5f0b4941e1c970"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+
+const RULES = {
+  START_DATE:    "2026-09-23",  // first day the bet counts. Nothing before this is scored.
+  PENALTY:       50,            // rupees per missed day
+  DEADLINE_HOUR: 3,             // 3 = submissions for a day close at 3:00 AM the next morning
+  MIN_PROBLEMS:  1,             // fewer than this = not a valid day
+  PHOTO_REQUIRED:true,          // must attach proof screenshot
+  BACKFILL_DAYS: 3,             // how many past days you can still log (always flagged LATE)
+  FLUSH_AFTER_DAYS: 1           // proof photos are deleted this many days after the day ends
+};
+/* ═══════════════ END CONFIG ═══════════════ */
+
+const fb   = initializeApp(firebaseConfig);
+const auth = getAuth(fb);
+const db   = getFirestore(fb);
+
+/* ─────────── helpers ─────────── */
+const $ = s => document.querySelector(s);
+const pad = n => String(n).padStart(2,"0");
+const iso = d => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const parse = s => { const [a,b,c]=s.split("-").map(Number); return new Date(a,b-1,c); };
+const addD = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x; };
+const diffD = (a,b) => Math.round((parse(b)-parse(a))/864e5);
+const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtD = s => parse(s).toLocaleDateString("en-IN",{day:"numeric",month:"short"});
+const rupee = n => (n<0?"−":"")+"₹"+Math.abs(n);
+
+/** The "logical day": before 3 AM you are still living in yesterday. */
+function logicalToday(now = new Date()){
+  const d = new Date(now);
+  if (d.getHours() < RULES.DEADLINE_HOUR) d.setDate(d.getDate()-1);
+  return iso(d);
+}
+/** Hard deadline for a logical day = next morning at DEADLINE_HOUR. */
+function deadlineOf(dateStr){
+  const d = addD(parse(dateStr),1);
+  d.setHours(RULES.DEADLINE_HOUR,0,0,0);
+  return d;
+}
+/** Every day strictly before today's logical day has already been judged. */
+function lastJudgedDay(){ return iso(addD(parse(logicalToday()),-1)); }
+
+function toast(msg){
+  const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"),2200);
+}
+
+/* ─────────── state ─────────── */
+let ME=null, MYUID=null, RIVAL=null, RIVALUID=null;
+let MYDAYS={}, RIVALDAYS={}, SETTLE={from:RULES.START_DATE,history:[]}, TAUNTS=[];
+let unsubs=[];
+let TAB = "arena";
+const TABS=[["arena","Arena"],["ledger","Ledger"],["history","History"],["trash","Trash Talk"]];
+
+/* ═══════════════ AUTH ═══════════════ */
+$("#lgBtn").onclick = async () => {
+  $("#lgErr").textContent="";
+  try{
+    await signInWithEmailAndPassword(auth, $("#lgEmail").value.trim(), $("#lgPass").value);
+  }catch(e){
+    $("#lgErr").textContent = (e.code||"").includes("invalid") ? "Wrong email or password."
+      : (e.code||"").includes("unauthorized-domain") ? "Add this site to Firebase → Auth → Settings → Authorized domains."
+      : (e.message||"Login failed");
+  }
+};
+$("#lgPass").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#lgBtn").click(); });
+$("#outBtn").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, async user => {
+  unsubs.forEach(u=>u()); unsubs=[];
+  if(!user){
+    $("#login").classList.remove("hide"); $("#app").classList.add("hide");
+    MYUID=null; return;
+  }
+  MYUID = user.uid;
+  $("#login").classList.add("hide"); $("#app").classList.remove("hide");
+
+  // ensure my profile exists
+  const meRef = doc(db,"users",MYUID);
+  const snap = await getDoc(meRef);
+  if(!snap.exists()){
+    let nm = prompt("Your fighter name (this is what your rival sees):") || (user.email.split("@")[0]);
+    await setDoc(meRef,{ name:nm.slice(0,24), email:user.email, joined:iso(new Date()) });
+  }
+  subscribe();
+  flushOldPhotos();
+});
+
+/* ═══════════════ SUBSCRIPTIONS ═══════════════ */
+function subscribe(){
+  // both profiles (collection has exactly 2 docs)
+  unsubs.push(onSnapshot(collection(db,"users"), s=>{
+    s.docs.forEach(d=>{
+      if(d.id===MYUID) ME=d.data();
+      else { RIVAL=d.data(); RIVALUID=d.id; subscribeRival(); }
+    });
+    render();
+  }));
+  unsubs.push(onSnapshot(collection(db,"users",MYUID,"days"), s=>{
+    MYDAYS={}; s.docs.forEach(d=>MYDAYS[d.id]=d.data()); render();
+  }));
+  unsubs.push(onSnapshot(doc(db,"meta","settle"), s=>{
+    if(s.exists()) SETTLE=Object.assign({from:RULES.START_DATE,history:[]}, s.data());
+    render();
+  }));
+  unsubs.push(onSnapshot(query(collection(db,"taunts"),orderBy("at","desc"),limit(40)), s=>{
+    TAUNTS=s.docs.map(d=>({id:d.id,...d.data()})); render();
+  }));
+}
+let rivalSub=null;
+function subscribeRival(){
+  if(rivalSub) return;
+  rivalSub = onSnapshot(collection(db,"users",RIVALUID,"days"), s=>{
+    RIVALDAYS={}; s.docs.forEach(d=>RIVALDAYS[d.id]=d.data()); render();
+  });
+  unsubs.push(rivalSub);
+}
+
+/* ═══════════════ SCORING ═══════════════ */
+function valid(entry){
+  if(!entry) return false;
+  if((entry.p||0) < RULES.MIN_PROBLEMS) return false;
+  if(RULES.PHOTO_REQUIRED && !entry.hasProof) return false;
+  return true;
+}
+function isLate(dateStr, e){
+  if(!e) return false;
+  const t = e.at && e.at.toDate ? e.at.toDate() : null;
+  if(!t) return !!e.late;                 // server stamp not back yet
+  return t > deadlineOf(dateStr);          // server time is the only authority
+}
+function statusOf(days, dateStr){
+  const e = days[dateStr];
+  if(!valid(e)) return parse(dateStr) <= parse(lastJudgedDay()) ? "no" : "pending";
+  return isLate(dateStr, e) ? "late" : "ok";
+}
+/** Positive = rival owes me. Negative = I owe rival. */
+function ledgerRows(){
+  const from = SETTLE.from || RULES.START_DATE;
+  const to   = lastJudgedDay();
+  const rows=[]; let bal=0;
+  if(diffD(from,to) < 0) return {rows,bal};
+  for(let d=from; diffD(d,to)>=0; d=iso(addD(parse(d),1))){
+    const mine = statusOf(MYDAYS,d), theirs = statusOf(RIVALDAYS,d);
+    const iMiss = mine!=="ok", tMiss = theirs!=="ok";
+    let delta = 0;
+    if(tMiss && !iMiss) delta =  RULES.PENALTY;
+    if(iMiss && !tMiss) delta = -RULES.PENALTY;
+    bal += delta;
+    rows.push({d, mine, theirs, delta, bal});
+  }
+  return {rows, bal};
+}
+function streakOf(days){
+  let n=0, d=logicalToday();
+  if(!valid(days[d])) d = iso(addD(parse(d),-1));
+  for(let i=0;i<400;i++){ if(valid(days[d])) { n++; d=iso(addD(parse(d),-1)); } else break; }
+  return n;
+}
+function totalProblems(days){ return Object.values(days).reduce((a,e)=>a+(e.p||0),0); }
+function lcOf(days){
+  const ks=Object.keys(days).filter(k=>days[k].lc).sort();
+  const last = ks.length ? days[ks[ks.length-1]].lc : null;
+  return last ? (last.e||0)+(last.m||0)+(last.h||0) : 0;
+}
+
+/* ═══════════════ PHOTO ═══════════════ */
+async function compress(file){
+  const bmp = await createImageBitmap(file);
+  const maxW = 1000;
+  const sc = Math.min(1, maxW/bmp.width);
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width*sc); c.height = Math.round(bmp.height*sc);
+  c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+  let q=0.7, url=c.toDataURL("image/jpeg",q);
+  while(url.length > 170000 && q > 0.25){ q -= 0.1; url = c.toDataURL("image/jpeg",q); }
+  if(url.length > 700000) throw new Error("Image too large even after compression.");
+  return url;
+}
+/** Each user deletes only their OWN old photos — that's all the rules permit. */
+async function flushOldPhotos(){
+  const cutoff = iso(addD(parse(logicalToday()), -RULES.FLUSH_AFTER_DAYS));
+  const snap = await getDocs(collection(db,"users",MYUID,"days"));
+  for(const d of snap.docs){
+    if(d.id < cutoff && d.data().photo){
+      try{ await updateDoc(d.ref,{ photo: deleteField() }); }catch(e){}
+    }
+  }
+}
+
+/* ═══════════════ SUBMIT ═══════════════ */
+let pendingPhoto = null;
+async function submitDay(dateStr){
+  const p  = Number($("#inP").value)||0;
+  const sd = $("#inSD").dataset.on==="1";
+  const e  = Number($("#inE").value)||0, m=Number($("#inM").value)||0, h=Number($("#inH").value)||0;
+  const note = $("#inNote").value.slice(0,200);
+  const existing = MYDAYS[dateStr];
+
+  if(p < RULES.MIN_PROBLEMS){ toast(`Need at least ${RULES.MIN_PROBLEMS} problem to count.`); return; }
+  if(RULES.PHOTO_REQUIRED && !pendingPhoto && !existing?.photo && !existing?.hasProof){
+    toast("Attach the screenshot. No proof, no point."); return;
+  }
+  const late = new Date() > deadlineOf(dateStr);
+  const body = {
+    p, sd, note, late,
+    lc:{e,m,h},
+    hasProof: !!(pendingPhoto || existing?.hasProof),
+    at: serverTimestamp()
+  };
+  if(pendingPhoto) body.photo = pendingPhoto;
+
+  $("#subBtn").disabled = true; $("#subBtn").textContent = "Locking in…";
+  try{
+    await setDoc(doc(db,"users",MYUID,"days",dateStr), body, { merge:true });
+    pendingPhoto = null;
+    toast(late ? `Logged — but it's LATE. ${rupee(RULES.PENALTY)} exposure.` : "Locked in. Day secured.");
+  }catch(err){
+    toast("Save failed: "+(err.code||err.message));
+  }
+  $("#subBtn").disabled = false;
+}
+
+/* ═══════════════ RENDER ═══════════════ */
+function render(){ renderClock(); renderNav(); renderArena(); renderLedger(); renderHistory(); renderTrash(); showTab(); }
+
+function renderNav(){
+  const n=$("#nav");
+  const html = TABS.map(t=>`<button data-t="${t[0]}" aria-selected="${t[0]===TAB}">${t[1]}</button>`).join("");
+  if(n.innerHTML!==html) n.innerHTML=html;
+  n.onclick = e => { const b=e.target.closest("button"); if(!b) return; TAB=b.dataset.t; render(); window.scrollTo(0,0); };
+}
+function showTab(){ TABS.forEach(t=>$("#v-"+t[0]).classList.toggle("hide", t[0]!==TAB)); }
+
+function renderClock(){
+  const today = logicalToday();
+  const dl = deadlineOf(today);
+  const ms = dl - new Date();
+  const c = $("#clock");
+  if(ms<=0){ c.textContent="deadline passed"; c.classList.add("late"); return; }
+  const hh=Math.floor(ms/36e5), mm=Math.floor(ms/6e4)%60, ss=Math.floor(ms/1000)%60;
+  c.textContent = `${pad(hh)}:${pad(mm)}:${pad(ss)} to 3 AM`;
+  c.classList.toggle("late", ms < 60*60*1000);
+}
+setInterval(renderClock, 1000);
+
+function fighterCard(name, days, isMe){
+  const today = logicalToday();
+  const st = statusOf(days, today);
+  const dotc = st==="ok"?"ok":st==="late"?"late":st==="no"?"no":"";
+  const e = days[today];
+  const label = st==="ok"?"submitted":st==="late"?"submitted late":st==="no"?"MISSED":"not yet today";
+  return `<div class="fighter ${isMe?"me":""}">
+    <div class="nm"><span class="dot ${dotc}"></span>${esc(name||"…")} ${isMe?'<span class="tiny">(you)</span>':""}</div>
+    <div class="lbl" style="margin-top:9px">today</div>
+    <div class="big" style="color:${st==="ok"?"var(--green)":st==="no"?"var(--red)":"var(--ink)"}">${e?.p||0}<span style="font-size:14px;color:var(--ink3)"> probs</span></div>
+    <div class="tiny">${label}${e?.sd?" · system design ✓":""}</div>
+    <div class="st3">
+      <div><span class="lbl">streak</span><b>${streakOf(days)}</b></div>
+      <div><span class="lbl">total</span><b>${totalProblems(days)}</b></div>
+      <div><span class="lbl">leetcode</span><b>${lcOf(days)}</b></div>
+    </div>
+    ${e?.photo ? `<img class="proof" src="${e.photo}" alt="proof">`
+      : e?.hasProof ? `<div class="tiny" style="margin-top:8px">proof was attached (photo auto-deleted)</div>` : ""}
+    ${e?.note ? `<div class="tiny" style="margin-top:7px;color:var(--ink2)">“${esc(e.note)}”</div>`:""}
+  </div>`;
+}
+
+function renderArena(){
+  const a = document.activeElement;
+  if(a && $("#v-arena").contains(a) && /INPUT|TEXTAREA/.test(a.tagName)) return; // user is typing
+  const today = logicalToday();
+  const mine = MYDAYS[today] || {};
+  const { bal } = ledgerRows();
+  const past = new Date() > deadlineOf(today);
+
+  const backfill = [];
+  for(let i=1;i<=RULES.BACKFILL_DAYS;i++){
+    const d = iso(addD(parse(today),-i));
+    if(diffD(RULES.START_DATE,d)>=0 && !valid(MYDAYS[d])) backfill.push(d);
+  }
+
+  $("#v-arena").innerHTML = `
+  ${bal===0 ? `<div class="banner even">Dead even. Nobody owes anybody — yet.</div>`
+    : bal>0 ? `<div class="banner win">${esc(RIVAL?.name||"Your rival")} owes you <b>${rupee(bal)}</b>. Keep him there.</div>`
+            : `<div class="banner lose">You owe ${esc(RIVAL?.name||"your rival")} <b>${rupee(-bal)}</b>. Fix it tonight.</div>`}
+
+  <h2>${parse(today).toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long"})}${past?" · window closed":""}</h2>
+  <div class="vs">
+    ${fighterCard(ME?.name, MYDAYS, true)}
+    ${RIVALUID ? fighterCard(RIVAL?.name, RIVALDAYS, false)
+      : `<div class="fighter"><div class="nm"><span class="dot"></span>Waiting for opponent</div>
+         <p class="tiny" style="margin-top:8px">Your friend hasn't signed in yet. Once he logs in once, he appears here permanently.</p></div>`}
+  </div>
+
+  <h2>Log ${past?`<span style="color:var(--red)">— LATE, ${rupee(RULES.PENALTY)} on the line</span>`:"today"}</h2>
+  <div class="card">
+    <div class="row">
+      <div><label class="f">Problems</label><input type="number" id="inP" min="0" max="50" value="${mine.p||0}"></div>
+      <div><label class="f">Sys design</label>
+        <button class="btn ${mine.sd?"on":""}" id="inSD" data-on="${mine.sd?1:0}">${mine.sd?"✓ done":"not yet"}</button></div>
+      <div><label class="f">LC easy</label><input type="number" id="inE" min="0" value="${mine.lc?.e||0}"></div>
+      <div><label class="f">LC med</label><input type="number" id="inM" min="0" value="${mine.lc?.m||0}"></div>
+      <div><label class="f">LC hard</label><input type="number" id="inH" min="0" value="${mine.lc?.h||0}"></div>
+    </div>
+    <div style="margin-top:12px">
+      <label class="f">Proof screenshot ${RULES.PHOTO_REQUIRED?"(required)":"(optional)"}</label>
+      <div class="drop" id="drop">${mine.photo||mine.hasProof ? "Proof on file — tap to replace" : "Tap to attach your LeetCode submissions screenshot"}</div>
+      <input type="file" id="file" accept="image/*" class="hide">
+      <img id="prev" class="proof hide" alt="preview">
+    </div>
+    <div style="margin-top:12px">
+      <label class="f">Note (your rival will read this)</label>
+      <textarea id="inNote" rows="2" maxlength="200" placeholder="What you actually did.">${esc(mine.note||"")}</textarea>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn gold" id="subBtn">${valid(mine)?"Update today":"Lock in the day"}</button>
+      <span class="tiny">Cutoff is ${RULES.DEADLINE_HOUR}:00 AM. Your device clock doesn't decide this — the server timestamp does.</span>
+    </div>
+  </div>
+
+  ${backfill.length ? `<h2>Unfinished business</h2>
+  <div class="card">
+    <p class="tiny" style="margin-top:0">These days are already scored against you. Logging them now records the work but does <b>not</b> refund the ${rupee(RULES.PENALTY)} — late is late.</p>
+    <div class="row">${backfill.map(d=>`<button class="btn" data-bf="${d}">Log ${fmtD(d)}</button>`).join("")}</div>
+  </div>`:""}
+
+  <div class="card">
+    <h3>The rules you both agreed to</h3>
+    <ul class="tiny" style="margin:0;padding-left:16px;line-height:1.7">
+      <li>A day counts only with <b>${RULES.MIN_PROBLEMS}+ problem</b>${RULES.PHOTO_REQUIRED?" <b>and</b> a proof screenshot":""}.</li>
+      <li>Submissions for a day close at <b>${RULES.DEADLINE_HOUR}:00 AM the next morning</b>. Before 3 AM, you're still on yesterday.</li>
+      <li>Miss a day your rival hit → you owe <b>${rupee(RULES.PENALTY)}</b>. Both miss → nobody pays. Both hit → nobody pays.</li>
+      <li>Proof photos are wiped ${RULES.FLUSH_AFTER_DAYS} day(s) later. The verdict survives; the screenshot doesn't.</li>
+      <li>Neither of you can edit the other's entries. That's enforced by the database, not by this page.</li>
+    </ul>
+  </div>`;
+
+  // wiring
+  $("#inSD").onclick = e => { const b=e.currentTarget; const on=b.dataset.on==="1";
+    b.dataset.on = on?"0":"1"; b.classList.toggle("on",!on); b.textContent = on?"not yet":"✓ done"; };
+  $("#drop").onclick = () => $("#file").click();
+  $("#file").onchange = async ev => {
+    const f = ev.target.files[0]; if(!f) return;
+    $("#drop").textContent = "Compressing…";
+    try{
+      pendingPhoto = await compress(f);
+      $("#prev").src = pendingPhoto; $("#prev").classList.remove("hide");
+      $("#drop").textContent = `Attached · ${(pendingPhoto.length/1365).toFixed(0)} KB — tap to replace`;
+    }catch(e){ $("#drop").textContent="Couldn't read that image. Try a screenshot."; }
+  };
+  if(pendingPhoto){
+    $("#prev").src = pendingPhoto; $("#prev").classList.remove("hide");
+    $("#drop").textContent = `Attached · ${(pendingPhoto.length/1365).toFixed(0)} KB — tap to replace`;
+  }
+  $("#subBtn").onclick = () => submitDay(today);
+  document.querySelectorAll("[data-bf]").forEach(b => b.onclick = () => submitDay(b.dataset.bf));
+}
+
+function renderLedger(){
+  const { rows, bal } = ledgerRows();
+  const myMiss = rows.filter(r=>r.mine!=="ok").length;
+  const tMiss  = rows.filter(r=>r.theirs!=="ok").length;
+  const since  = SETTLE.from || RULES.START_DATE;
+
+  $("#v-ledger").innerHTML = `
+  <h2>Running balance since ${fmtD(since)}</h2>
+  <div class="card" style="text-align:center;padding:22px 14px">
+    <div class="big" style="font-size:46px;color:${bal>0?"var(--green)":bal<0?"var(--red)":"var(--ink2)"}">${rupee(bal)}</div>
+    <div class="tiny" style="margin-top:4px">${bal>0?`${esc(RIVAL?.name||"Rival")} → you`:bal<0?`You → ${esc(RIVAL?.name||"rival")}`:"nobody owes anybody"}</div>
+    <div class="st3" style="max-width:420px;margin:16px auto 0">
+      <div><span class="lbl">days scored</span><b>${rows.length}</b></div>
+      <div><span class="lbl">you missed</span><b style="color:${myMiss?"var(--red)":"var(--green)"}">${myMiss}</b></div>
+      <div><span class="lbl">he missed</span><b style="color:${tMiss?"var(--green)":"var(--ink)"}">${tMiss}</b></div>
+    </div>
+  </div>
+
+  <h2>Settle up</h2>
+  <div class="card">
+    <p class="muted" style="margin-top:0">At month end, pay the balance in cash, then hit this. It freezes the amount into history and restarts the count from tomorrow. Either of you can press it — so agree out loud first.</p>
+    <button class="btn gold" id="settleBtn" ${rows.length?"":"disabled"}>Settle ${rupee(bal)} and reset</button>
+    ${SETTLE.history?.length ? `<div class="scrollx" style="margin-top:14px"><table>
+      <thead><tr><th>Settled on</th><th>Period</th><th class="num">Amount</th><th>Direction</th></tr></thead><tbody>
+      ${SETTLE.history.slice().reverse().map(h=>`<tr><td>${fmtD(h.on)}</td><td class="tiny">${fmtD(h.from)}–${fmtD(h.to)}</td>
+        <td class="num">₹${Math.abs(h.amt)}</td><td class="tiny">${esc(h.dir)}</td></tr>`).join("")}
+      </tbody></table></div>`:""}
+  </div>
+
+  <h2>Day by day</h2>
+  <div class="card scrollx">
+    ${rows.length ? `<table>
+      <thead><tr><th>Date</th><th>You</th><th>${esc(RIVAL?.name||"Rival")}</th><th class="num">Δ</th><th class="num">Balance</th></tr></thead>
+      <tbody>${rows.slice().reverse().map(r=>`<tr>
+        <td class="tiny mono">${fmtD(r.d)}</td>
+        <td>${badge(r.mine)}</td><td>${badge(r.theirs)}</td>
+        <td class="num ${r.delta>0?"pos":r.delta<0?"neg":"zero"}">${r.delta?rupee(r.delta):"—"}</td>
+        <td class="num ${r.bal>0?"pos":r.bal<0?"neg":"zero"}">${rupee(r.bal)}</td>
+      </tr>`).join("")}</tbody></table>`
+    : `<p class="tiny" style="margin:0">Nothing scored yet. The first judged day appears the morning after ${fmtD(since)}.</p>`}
+  </div>`;
+
+  const sb = $("#settleBtn");
+  if(sb) sb.onclick = async () => {
+    if(!confirm(`Settle ${rupee(bal)} and reset the counter? Do this only after the cash has changed hands.`)) return;
+    const hist = (SETTLE.history||[]).concat([{
+      on: iso(new Date()), from: since, to: lastJudgedDay(), amt: bal,
+      dir: bal>0 ? `${RIVAL?.name||"rival"} paid you` : bal<0 ? `you paid ${RIVAL?.name||"rival"}` : "no payment"
+    }]).slice(-24);
+    await setDoc(doc(db,"meta","settle"), { from: logicalToday(), history: hist }, { merge:true });
+    toast("Settled. Clean slate.");
+  };
+}
+function badge(s){
+  if(s==="ok")   return `<span style="color:var(--green)">✓ hit</span>`;
+  if(s==="late") return `<span style="color:var(--gold)">late</span>`;
+  if(s==="no")   return `<span style="color:var(--red)">✗ missed</span>`;
+  return `<span class="zero">—</span>`;
+}
+
+function renderHistory(){
+  const from = RULES.START_DATE, to = logicalToday();
+  const n = Math.max(1, diffD(from,to)+1);
+  const strip = days => { let h=""; for(let i=0;i<n;i++){ const d=iso(addD(parse(from),i)); h+=`<i data-s="${statusOf(days,d)}" title="${d}"></i>`; } return h; };
+  const pct = days => { const scored=ledgerRows().rows.length||1;
+    return Math.round(ledgerRows().rows.filter(r=>(days===MYDAYS?r.mine:r.theirs)==="ok").length/scored*100); };
+
+  $("#v-history").innerHTML = `
+  <h2>${esc(ME?.name||"You")}</h2>
+  <div class="card"><div class="hm">${strip(MYDAYS)}</div>
+    <div class="tiny" style="margin-top:8px">${pct(MYDAYS)}% hit rate · ${streakOf(MYDAYS)} day streak · ${totalProblems(MYDAYS)} problems total</div></div>
+  <h2>${esc(RIVAL?.name||"Rival")}</h2>
+  <div class="card"><div class="hm">${strip(RIVALDAYS)}</div>
+    <div class="tiny" style="margin-top:8px">${pct(RIVALDAYS)}% hit rate · ${streakOf(RIVALDAYS)} day streak · ${totalProblems(RIVALDAYS)} problems total</div></div>
+  <div class="card"><p class="tiny" style="margin:0">Each square is one day, columns run in weeks.
+    <span style="color:var(--green)">green</span> = hit · <span style="color:var(--gold)">amber</span> = late ·
+    <span style="color:var(--red)">red</span> = missed · grey = not judged yet.</p></div>`;
+}
+
+function renderTrash(){
+  $("#v-trash").innerHTML = `
+  <h2>Trash talk</h2>
+  <div class="card">
+    <textarea id="tIn" rows="2" maxlength="220" placeholder="Say something you'll regret when he's ₹300 up."></textarea>
+    <div class="row" style="margin-top:8px"><button class="btn gold" id="tBtn">Post</button>
+      <span class="tiny">Last 40 messages. You can delete yours, not his.</span></div>
+  </div>
+  <div class="card">
+    ${TAUNTS.length ? TAUNTS.map(t=>`<div class="taunt">
+      <div class="w">${esc(t.uid===MYUID ? (ME?.name||"you") : (RIVAL?.name||"rival"))} · ${t.at?.toDate ? t.at.toDate().toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "just now"}
+        ${t.uid===MYUID?`<button class="btn dim" data-del="${t.id}" style="padding:1px 7px;font-size:10px;margin-left:6px">delete</button>`:""}</div>
+      <div style="margin-top:3px">${esc(t.text)}</div></div>`).join("")
+    : `<p class="tiny" style="margin:0">Silence. Suspicious.</p>`}
+  </div>`;
+  $("#tBtn").onclick = async () => {
+    const v=$("#tIn").value.trim(); if(!v) return;
+    await addDoc(collection(db,"taunts"),{ uid:MYUID, text:v.slice(0,220), at:serverTimestamp() });
+    $("#tIn").value="";
+  };
+  document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => deleteDoc(doc(db,"taunts",b.dataset.del)));
+}
+
+/* boot */
+$("#login").classList.remove("hide");
+</script>
+</body>
+</html>
