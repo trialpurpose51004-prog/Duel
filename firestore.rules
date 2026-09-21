@@ -1,0 +1,85 @@
+rules_version = '2';
+
+// ──────────────────────────────────────────────────────────────
+//  THE DUEL — security rules
+//
+//  Core guarantee: both players can READ everything, but neither
+//  can WRITE anything that belongs to the other. This is enforced
+//  by the database itself, not by the webpage — disabling a button
+//  in DevTools achieves nothing.
+//
+//  Paste this whole file into:
+//  Firebase console → Firestore Database → Rules → Publish
+// ──────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // ---- Player profiles: users/{uid} ----
+    match /users/{uid} {
+      allow read:  if signedIn();
+      allow write: if signedIn() && request.auth.uid == uid;
+
+      // ---- Daily submissions: users/{uid}/days/{YYYY-MM-DD} ----
+      match /days/{day} {
+        allow read: if signedIn();
+
+        // You may only write your own days, and the `at` field MUST be the
+        // real server time. That is what makes "late" impossible to fake by
+        // changing your phone's clock.
+        allow create: if signedIn()
+                      && request.auth.uid == uid
+                      && request.resource.data.at == request.time
+                      && request.resource.data.p is number
+                      && request.resource.data.p >= 0
+                      && request.resource.data.p <= 100;
+
+        // Two legal updates:
+        //  1. re-submitting the day  -> must carry a fresh server timestamp
+        //  2. the nightly photo flush -> may touch ONLY the `photo` field
+        allow update: if signedIn()
+                      && request.auth.uid == uid
+                      && (
+                           (request.resource.data.at == request.time
+                            && request.resource.data.p is number
+                            && request.resource.data.p >= 0
+                            && request.resource.data.p <= 100)
+                           ||
+                           request.resource.data.diff(resource.data)
+                             .affectedKeys().hasOnly(['photo'])
+                         );
+
+        // Deleting a day would erase evidence — nobody gets to do it.
+        // (The app only removes the `photo` field, which is an update.)
+        allow delete: if false;
+      }
+    }
+
+    // ---- Shared settlement record: meta/settle ----
+    // Mutual bookkeeping, so both players may write it. Agree out loud first.
+    match /meta/{docId} {
+      allow read:  if signedIn();
+      allow write: if signedIn();
+    }
+
+    // ---- Trash talk: taunts/{autoId} ----
+    match /taunts/{id} {
+      allow read:   if signedIn();
+      allow create: if signedIn()
+                    && request.auth.uid == request.resource.data.uid
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() <= 220;
+      allow update: if false;                                   // no editing history
+      allow delete: if signedIn() && request.auth.uid == resource.data.uid;
+    }
+
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
