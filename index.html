@@ -147,10 +147,6 @@ import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteField, collection,
   onSnapshot, query, orderBy, limit, serverTimestamp, addDoc, deleteDoc, getDocs }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -161,9 +157,6 @@ const firebaseConfig = {
   messagingSenderId: "797306569553",
   appId: "1:797306569553:web:27bfbb8c5f0b4941e1c970"
 };
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
 
 const RULES = {
   START_DATE:    "2026-09-23",  // first day the bet counts. Nothing before this is scored.
