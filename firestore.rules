@@ -1,15 +1,15 @@
 rules_version = '2';
 
 // ──────────────────────────────────────────────────────────────
-//  THE DUEL — security rules
+//  THE DUEL — security rules (v2: multi-photo + leave days)
 //
-//  Core guarantee: both players can READ everything, but neither
-//  can WRITE anything that belongs to the other. This is enforced
-//  by the database itself, not by the webpage — disabling a button
-//  in DevTools achieves nothing.
+//  Core guarantee unchanged: both players can READ everything,
+//  but neither can WRITE anything that belongs to the other.
 //
 //  Paste this whole file into:
 //  Firebase console → Firestore Database → Rules → Publish
+//  (this REPLACES your v1 rules — the app will get permission-denied
+//   errors on photos and leave-days until you republish)
 // ──────────────────────────────────────────────────────────────
 
 service cloud.firestore {
@@ -28,9 +28,6 @@ service cloud.firestore {
       match /days/{day} {
         allow read: if signedIn();
 
-        // You may only write your own days, and the `at` field MUST be the
-        // real server time. That is what makes "late" impossible to fake by
-        // changing your phone's clock.
         allow create: if signedIn()
                       && request.auth.uid == uid
                       && request.resource.data.at == request.time
@@ -38,9 +35,11 @@ service cloud.firestore {
                       && request.resource.data.p >= 0
                       && request.resource.data.p <= 100;
 
-        // Two legal updates:
-        //  1. re-submitting the day  -> must carry a fresh server timestamp
-        //  2. the nightly photo flush -> may touch ONLY the `photo` field
+        // Three legal kinds of update to a day doc:
+        //  1. re-submitting the day's numbers -> fresh server timestamp required
+        //  2. marking / unmarking a leave day  -> touches only leave + at
+        //  3. legacy single-photo flush field  -> kept for compatibility with
+        //     any day docs written by the original version of this app
         allow update: if signedIn()
                       && request.auth.uid == uid
                       && (
@@ -49,18 +48,32 @@ service cloud.firestore {
                             && request.resource.data.p >= 0
                             && request.resource.data.p <= 100)
                            ||
-                           request.resource.data.diff(resource.data)
-                             .affectedKeys().hasOnly(['photo'])
+                           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leave','at'])
+                            && request.resource.data.at == request.time)
+                           ||
+                           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photo'])
                          );
 
-        // Deleting a day would erase evidence — nobody gets to do it.
-        // (The app only removes the `photo` field, which is an update.)
         allow delete: if false;
+
+        // ---- Proof screenshots: users/{uid}/days/{day}/photos/{autoId} ----
+        // Each screenshot is its own small document (a single Firestore doc
+        // tops out at 1 MiB, which 15 base64 images in one place would blow
+        // through). Only the owner can add or remove their own screenshots.
+        match /photos/{photoId} {
+          allow read: if signedIn();
+          allow create: if signedIn()
+                        && request.auth.uid == uid
+                        && request.resource.data.url is string
+                        && request.resource.data.url.size() < 900000
+                        && request.resource.data.at == request.time;
+          allow update: if false;
+          allow delete: if signedIn() && request.auth.uid == uid;
+        }
       }
     }
 
     // ---- Shared settlement record: meta/settle ----
-    // Mutual bookkeeping, so both players may write it. Agree out loud first.
     match /meta/{docId} {
       allow read:  if signedIn();
       allow write: if signedIn();
@@ -73,7 +86,7 @@ service cloud.firestore {
                     && request.auth.uid == request.resource.data.uid
                     && request.resource.data.text is string
                     && request.resource.data.text.size() <= 220;
-      allow update: if false;                                   // no editing history
+      allow update: if false;
       allow delete: if signedIn() && request.auth.uid == resource.data.uid;
     }
 
