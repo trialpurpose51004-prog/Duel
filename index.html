@@ -50,6 +50,8 @@ h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3
 .dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}
 .dot.late{background:var(--gold)}
 .dot.no{background:var(--red)}
+.dot.leave{background:var(--blue)}
+.leave-txt{color:var(--blue)}
 .big{font-family:ui-monospace,Menlo,monospace;font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1.1}
 .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);font-family:ui-monospace,Menlo,monospace}
 .st3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
@@ -86,6 +88,7 @@ td.num{font-family:ui-monospace,Menlo,monospace;text-align:right}
 .hm i[data-s="ok"]{background:var(--green);border-color:var(--green)}
 .hm i[data-s="late"]{background:var(--gold);border-color:var(--gold)}
 .hm i[data-s="no"]{background:color-mix(in srgb,var(--red) 55%,var(--panel2));border-color:var(--red)}
+.hm i[data-s="leave"]{background:color-mix(in srgb,var(--blue) 55%,var(--panel2));border-color:var(--blue)}
 
 .taunt{border-bottom:1px solid var(--line);padding:9px 0}
 .taunt:last-child{border-bottom:none}
@@ -100,6 +103,11 @@ td.num{font-family:ui-monospace,Menlo,monospace;text-align:right}
   background:var(--panel2);border:1px solid var(--line2);border-radius:99px;padding:7px 16px;font-size:13px;
   z-index:60;opacity:0;pointer-events:none;transition:opacity .25s}
 #toast.show{opacity:1}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin-top:8px}
+.gallery .th{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;border:1px solid var(--line2);background:var(--panel2)}
+.gallery .th img{width:100%;height:100%;object-fit:cover;display:block;cursor:pointer}
+.gallery .th button{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;
+  background:rgba(0,0,0,.65);color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer;padding:0}
 </style>
 </head>
 <body>
@@ -143,27 +151,28 @@ td.num{font-family:ui-monospace,Menlo,monospace;text-align:right}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteField, collection,
+import { getFirestore, doc, setDoc, getDoc, collection,
   onSnapshot, query, orderBy, limit, serverTimestamp, addDoc, deleteDoc, getDocs }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-
-// Your web app's Firebase configuration
+/* ═══════════════ 1. CONFIG — EDIT THIS BLOCK ═══════════════ */
 const firebaseConfig = {
-  apiKey: "AIzaSyDH9wluW5H4ZuIN6_dfWeHzLutMqAXIXZQ",
-  authDomain: "duel-e6faf.firebaseapp.com",
-  projectId: "duel-e6faf",
-  storageBucket: "duel-e6faf.firebasestorage.app",
+  apiKey:            "AIzaSyDH9wluW5H4ZuIN6_dfWeHzLutMqAXIXZQ",
+  authDomain:        "duel-e6faf.firebaseapp.com",
+  projectId:         "duel-e6faf",
+  storageBucket:     "duel-e6faf.firebasestorage.app",
   messagingSenderId: "797306569553",
-  appId: "1:797306569553:web:27bfbb8c5f0b4941e1c970"
+  appId:             "1:797306569553:web:27bfbb8c5f0b4941e1c970"
 };
 
 const RULES = {
-  START_DATE:    "2026-09-23",  // first day the bet counts. Nothing before this is scored.
+  START_DATE:    "2026-09-22",  // first day the bet counts. Nothing before this is scored.
   PENALTY:       50,            // rupees per missed day
   DEADLINE_HOUR: 3,             // 3 = submissions for a day close at 3:00 AM the next morning
   MIN_PROBLEMS:  1,             // fewer than this = not a valid day
-  PHOTO_REQUIRED:true,          // must attach proof screenshot
+  PHOTO_REQUIRED:true,          // must attach at least one proof screenshot
+  MAX_PHOTOS:    15,            // most screenshots either of you can attach per day
+  LEAVES_PER_MONTH: 6,          // leave days each of you can take, resets every calendar month
   BACKFILL_DAYS: 3,             // how many past days you can still log (always flagged LATE)
   FLUSH_AFTER_DAYS: 1           // proof photos are deleted this many days after the day ends
 };
@@ -207,7 +216,12 @@ function toast(msg){
 /* ─────────── state ─────────── */
 let ME=null, MYUID=null, RIVAL=null, RIVALUID=null;
 let MYDAYS={}, RIVALDAYS={}, SETTLE={from:RULES.START_DATE,history:[]}, TAUNTS=[];
-let unsubs=[];
+let MYPHOTOS=[], RIVALPHOTOS=[];   // live screenshots for *today*, each side
+let EDIT_DATE=null;                // null = the Log card edits today; else a backfill date
+let EDITCACHE={};                  // date -> screenshots[], one-shot fetch cache for backfill days
+let pendingPhotos=[];              // newly attached, not-yet-uploaded, for the date being edited
+let CUR_DAY=null;                  // tracks the logical day, so we can detect the 3 AM rollover
+let unsubs=[], photoUnsubs=[];
 let TAB = "arena";
 const TABS=[["arena","Arena"],["ledger","Ledger"],["history","History"],["trash","Trash Talk"]];
 
@@ -227,9 +241,10 @@ $("#outBtn").onclick = () => signOut(auth);
 
 onAuthStateChanged(auth, async user => {
   unsubs.forEach(u=>u()); unsubs=[];
+  photoUnsubs.forEach(u=>u()); photoUnsubs=[];
   if(!user){
     $("#login").classList.remove("hide"); $("#app").classList.add("hide");
-    MYUID=null; return;
+    MYUID=null; CUR_DAY=null; return;
   }
   MYUID = user.uid;
   $("#login").classList.add("hide"); $("#app").classList.remove("hide");
@@ -242,6 +257,7 @@ onAuthStateChanged(auth, async user => {
     await setDoc(meRef,{ name:nm.slice(0,24), email:user.email, joined:iso(new Date()) });
   }
   subscribe();
+  checkRollover();   // sets CUR_DAY and attaches my photo listener
   flushOldPhotos();
 });
 
@@ -273,6 +289,34 @@ function subscribeRival(){
     RIVALDAYS={}; s.docs.forEach(d=>RIVALDAYS[d.id]=d.data()); render();
   });
   unsubs.push(rivalSub);
+  const t = CUR_DAY || logicalToday();
+  const rp = onSnapshot(collection(db,"users",RIVALUID,"days",t,"photos"), s=>{
+    RIVALPHOTOS = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.id<b.id?-1:1);
+    render();
+  });
+  photoUnsubs.push(rp);
+}
+/** Tears down and rebuilds today's photo listeners when the logical day changes at 3 AM,
+ *  and does the initial setup right after login (CUR_DAY starts null). */
+function checkRollover(){
+  const t = logicalToday();
+  if(t === CUR_DAY) return;
+  CUR_DAY = t;
+  if(EDIT_DATE === t) EDIT_DATE = null;   // a backfill target just became "today" itself
+  photoUnsubs.forEach(u=>u()); photoUnsubs=[];
+  if(MYUID){
+    photoUnsubs.push(onSnapshot(collection(db,"users",MYUID,"days",t,"photos"), s=>{
+      MYPHOTOS = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.id<b.id?-1:1);
+      render();
+    }));
+    if(RIVALUID){
+      photoUnsubs.push(onSnapshot(collection(db,"users",RIVALUID,"days",t,"photos"), s=>{
+        RIVALPHOTOS = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.id<b.id?-1:1);
+        render();
+      }));
+    }
+  }
+  render();
 }
 
 /* ═══════════════ SCORING ═══════════════ */
@@ -288,7 +332,13 @@ function isLate(dateStr, e){
   if(!t) return !!e.late;                 // server stamp not back yet
   return t > deadlineOf(dateStr);          // server time is the only authority
 }
+/** A leave is personal: it protects the person who took it from being scored a miss
+ *  that day. It does NOT excuse the other person — if he misses on your leave day,
+ *  he still owes. This is deliberate: otherwise leave becomes a way to dodge a day
+ *  you know you'd lose money on, which defeats the point of the bet. */
+function isLeave(days, dateStr){ return !!(days[dateStr] && days[dateStr].leave); }
 function statusOf(days, dateStr){
+  if(isLeave(days, dateStr)) return "leave";
   const e = days[dateStr];
   if(!valid(e)) return parse(dateStr) <= parse(lastJudgedDay()) ? "no" : "pending";
   return isLate(dateStr, e) ? "late" : "ok";
@@ -301,7 +351,8 @@ function ledgerRows(){
   if(diffD(from,to) < 0) return {rows,bal};
   for(let d=from; diffD(d,to)>=0; d=iso(addD(parse(d),1))){
     const mine = statusOf(MYDAYS,d), theirs = statusOf(RIVALDAYS,d);
-    const iMiss = mine!=="ok", tMiss = theirs!=="ok";
+    const iMiss = mine==="no" || mine==="late";
+    const tMiss = theirs==="no" || theirs==="late";
     let delta = 0;
     if(tMiss && !iMiss) delta =  RULES.PENALTY;
     if(iMiss && !tMiss) delta = -RULES.PENALTY;
@@ -312,9 +363,19 @@ function ledgerRows(){
 }
 function streakOf(days){
   let n=0, d=logicalToday();
-  if(!valid(days[d])) d = iso(addD(parse(d),-1));
-  for(let i=0;i<400;i++){ if(valid(days[d])) { n++; d=iso(addD(parse(d),-1)); } else break; }
+  if(!valid(days[d]) && !isLeave(days,d)) d = iso(addD(parse(d),-1));
+  for(let i=0;i<400;i++){
+    if(isLeave(days,d)){ d=iso(addD(parse(d),-1)); continue; }  // leave days pass through, streak intact
+    if(valid(days[d])){ n++; d=iso(addD(parse(d),-1)); } else break;
+  }
   return n;
+}
+function leavesUsed(days, month){
+  return Object.entries(days).filter(([d,v]) => v && v.leave && d.slice(0,7)===month).length;
+}
+function upcomingLeaves(days){
+  const today = logicalToday();
+  return Object.entries(days).filter(([d,v]) => v && v.leave && d>=today).map(([d])=>d).sort();
 }
 function totalProblems(days){ return Object.values(days).reduce((a,e)=>a+(e.p||0),0); }
 function lcOf(days){
@@ -323,7 +384,10 @@ function lcOf(days){
   return last ? (last.e||0)+(last.m||0)+(last.h||0) : 0;
 }
 
-/* ═══════════════ PHOTO ═══════════════ */
+/* ═══════════════ PHOTOS ═══════════════ */
+/** Each day's screenshots live in their own subcollection (users/{uid}/days/{date}/photos/{id})
+ *  rather than as one field on the day doc — a single Firestore document tops out at 1 MiB,
+ *  which up to 15 screenshots would blow through instantly if they all lived in one place. */
 async function compress(file){
   const bmp = await createImageBitmap(file);
   const maxW = 1000;
@@ -336,48 +400,92 @@ async function compress(file){
   if(url.length > 700000) throw new Error("Image too large even after compression.");
   return url;
 }
+function targetDate(){ return EDIT_DATE || logicalToday(); }
+
+/** Compress and stage every selected file, capped at MAX_PHOTOS total for the day being edited. */
+async function addPendingFiles(fileList){
+  const day = targetDate();
+  const existingCount = day===logicalToday() ? MYPHOTOS.length : (EDITCACHE[day]||[]).length;
+  const room = RULES.MAX_PHOTOS - existingCount - pendingPhotos.length;
+  if(room <= 0){ toast(`Already at the ${RULES.MAX_PHOTOS}-photo cap for this day.`); return; }
+  const files = Array.from(fileList).slice(0, room);
+  if(fileList.length > files.length) toast(`Only room for ${files.length} more — capped at ${RULES.MAX_PHOTOS}/day.`);
+  for(const f of files){
+    try{ pendingPhotos.push(await compress(f)); }
+    catch(e){ toast("Couldn't read one of those images."); }
+  }
+  render();
+}
+/** One-shot fetch of an already-passed day's saved screenshots, for the backfill flow. */
+async function fetchEditPhotos(day){
+  if(day in EDITCACHE) return;
+  EDITCACHE[day] = [];  // placeholder — prevents a duplicate fetch while this one is in flight
+  const snap = await getDocs(collection(db,"users",MYUID,"days",day,"photos"));
+  EDITCACHE[day] = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.id<b.id?-1:1);
+  render();
+}
 /** Each user deletes only their OWN old photos — that's all the rules permit. */
 async function flushOldPhotos(){
   const cutoff = iso(addD(parse(logicalToday()), -RULES.FLUSH_AFTER_DAYS));
   const snap = await getDocs(collection(db,"users",MYUID,"days"));
   for(const d of snap.docs){
-    if(d.id < cutoff && d.data().photo){
-      try{ await updateDoc(d.ref,{ photo: deleteField() }); }catch(e){}
+    if(d.id < cutoff){
+      try{
+        const psnap = await getDocs(collection(db,"users",MYUID,"days",d.id,"photos"));
+        for(const p of psnap.docs){ await deleteDoc(p.ref); }
+      }catch(e){}
     }
   }
 }
 
 /* ═══════════════ SUBMIT ═══════════════ */
-let pendingPhoto = null;
 async function submitDay(dateStr){
   const p  = Number($("#inP").value)||0;
   const sd = $("#inSD").dataset.on==="1";
   const e  = Number($("#inE").value)||0, m=Number($("#inM").value)||0, h=Number($("#inH").value)||0;
   const note = $("#inNote").value.slice(0,200);
-  const existing = MYDAYS[dateStr];
+  const existing = MYDAYS[dateStr] || {};
+  const existingPhotoCount = dateStr===logicalToday() ? MYPHOTOS.length : (EDITCACHE[dateStr]||[]).length;
+  const totalPhotos = existingPhotoCount + pendingPhotos.length;
 
   if(p < RULES.MIN_PROBLEMS){ toast(`Need at least ${RULES.MIN_PROBLEMS} problem to count.`); return; }
-  if(RULES.PHOTO_REQUIRED && !pendingPhoto && !existing?.photo && !existing?.hasProof){
-    toast("Attach the screenshot. No proof, no point."); return;
+  if(RULES.PHOTO_REQUIRED && totalPhotos < 1 && !existing.hasProof){
+    toast("Attach at least one screenshot. No proof, no point."); return;
   }
   const late = new Date() > deadlineOf(dateStr);
   const body = {
     p, sd, note, late,
     lc:{e,m,h},
-    hasProof: !!(pendingPhoto || existing?.hasProof),
+    hasProof: totalPhotos > 0 || !!existing.hasProof,
     at: serverTimestamp()
   };
-  if(pendingPhoto) body.photo = pendingPhoto;
 
   $("#subBtn").disabled = true; $("#subBtn").textContent = "Locking in…";
   try{
     await setDoc(doc(db,"users",MYUID,"days",dateStr), body, { merge:true });
-    pendingPhoto = null;
+    for(const url of pendingPhotos){
+      await addDoc(collection(db,"users",MYUID,"days",dateStr,"photos"), { url, at: serverTimestamp() });
+    }
+    pendingPhotos = [];
+    delete EDITCACHE[dateStr];                     // force a fresh fetch if this backfill date is reopened
+    if(EDIT_DATE === dateStr) EDIT_DATE = null;     // done backfilling — hop back to today
     toast(late ? `Logged — but it's LATE. ${rupee(RULES.PENALTY)} exposure.` : "Locked in. Day secured.");
   }catch(err){
     toast("Save failed: "+(err.code||err.message));
   }
   $("#subBtn").disabled = false;
+}
+/** Leave quota resets every calendar month automatically — it's just counted off the date string. */
+async function toggleLeave(dateStr, on){
+  if(on){
+    const month = dateStr.slice(0,7);
+    const used = leavesUsed(MYDAYS, month);
+    if(used >= RULES.LEAVES_PER_MONTH){ toast(`No leaves left for ${month}.`); return; }
+  }
+  try{
+    await setDoc(doc(db,"users",MYUID,"days",dateStr), { leave:on, at:serverTimestamp() }, { merge:true });
+    toast(on ? "Marked as leave. That day's yours." : "Leave removed.");
+  }catch(err){ toast("Save failed: "+(err.code||err.message)); }
 }
 
 /* ═══════════════ RENDER ═══════════════ */
@@ -403,25 +511,25 @@ function renderClock(){
 }
 setInterval(renderClock, 1000);
 
-function fighterCard(name, days, isMe){
+function fighterCard(name, days, photos, isMe){
   const today = logicalToday();
   const st = statusOf(days, today);
-  const dotc = st==="ok"?"ok":st==="late"?"late":st==="no"?"no":"";
-  const e = days[today];
-  const label = st==="ok"?"submitted":st==="late"?"submitted late":st==="no"?"MISSED":"not yet today";
+  const dotc = st==="ok"?"ok":st==="late"?"late":st==="no"?"no":st==="leave"?"leave":"";
+  const e = days[today] || {};
+  const label = st==="ok"?"submitted":st==="late"?"submitted late":st==="no"?"MISSED":st==="leave"?"on leave today":"not yet today";
   return `<div class="fighter ${isMe?"me":""}">
     <div class="nm"><span class="dot ${dotc}"></span>${esc(name||"…")} ${isMe?'<span class="tiny">(you)</span>':""}</div>
     <div class="lbl" style="margin-top:9px">today</div>
-    <div class="big" style="color:${st==="ok"?"var(--green)":st==="no"?"var(--red)":"var(--ink)"}">${e?.p||0}<span style="font-size:14px;color:var(--ink3)"> probs</span></div>
-    <div class="tiny">${label}${e?.sd?" · system design ✓":""}</div>
+    <div class="big" style="color:${st==="ok"?"var(--green)":st==="no"?"var(--red)":st==="leave"?"var(--blue)":"var(--ink)"}">${st==="leave"?"—":(e.p||0)}<span style="font-size:14px;color:var(--ink3)">${st==="leave"?"":" probs"}</span></div>
+    <div class="tiny">${label}${e.sd?" · system design ✓":""}</div>
     <div class="st3">
       <div><span class="lbl">streak</span><b>${streakOf(days)}</b></div>
       <div><span class="lbl">total</span><b>${totalProblems(days)}</b></div>
       <div><span class="lbl">leetcode</span><b>${lcOf(days)}</b></div>
     </div>
-    ${e?.photo ? `<img class="proof" src="${e.photo}" alt="proof">`
-      : e?.hasProof ? `<div class="tiny" style="margin-top:8px">proof was attached (photo auto-deleted)</div>` : ""}
-    ${e?.note ? `<div class="tiny" style="margin-top:7px;color:var(--ink2)">“${esc(e.note)}”</div>`:""}
+    ${photos.length ? `<div class="gallery">${photos.map(ph=>`<div class="th"><img class="pv" src="${ph.url}" alt="proof"></div>`).join("")}</div>`
+      : e.hasProof ? `<div class="tiny" style="margin-top:8px">proof was attached (screenshots auto-deleted)</div>` : ""}
+    ${e.note ? `<div class="tiny" style="margin-top:7px;color:var(--ink2)">“${esc(e.note)}”</div>`:""}
   </div>`;
 }
 
@@ -429,15 +537,29 @@ function renderArena(){
   const a = document.activeElement;
   if(a && $("#v-arena").contains(a) && /INPUT|TEXTAREA/.test(a.tagName)) return; // user is typing
   const today = logicalToday();
-  const mine = MYDAYS[today] || {};
+  const day = targetDate();          // the date the Log card is currently editing
+  const editing = day !== today;
+  if(editing) fetchEditPhotos(day);  // one-shot fetch, no-op if already cached
+
+  const mine = MYDAYS[day] || {};
   const { bal } = ledgerRows();
   const past = new Date() > deadlineOf(today);
+
+  const existingPhotos = day===today ? MYPHOTOS : (EDITCACHE[day]||[]);
+  const totalSlots = existingPhotos.length + pendingPhotos.length;
+  const photoLabel = RULES.PHOTO_REQUIRED
+    ? `(at least 1, up to ${RULES.MAX_PHOTOS})` : `(optional, up to ${RULES.MAX_PHOTOS})`;
 
   const backfill = [];
   for(let i=1;i<=RULES.BACKFILL_DAYS;i++){
     const d = iso(addD(parse(today),-i));
-    if(diffD(RULES.START_DATE,d)>=0 && !valid(MYDAYS[d])) backfill.push(d);
+    if(diffD(RULES.START_DATE,d)>=0 && !valid(MYDAYS[d]) && !isLeave(MYDAYS,d) && d!==day) backfill.push(d);
   }
+
+  const myMonth = today.slice(0,7);
+  const myLeaves = leavesUsed(MYDAYS, myMonth);
+  const rivalLeaves = leavesUsed(RIVALDAYS, myMonth);
+  const myUpcoming = upcomingLeaves(MYDAYS);
 
   $("#v-arena").innerHTML = `
   ${bal===0 ? `<div class="banner even">Dead even. Nobody owes anybody — yet.</div>`
@@ -446,13 +568,14 @@ function renderArena(){
 
   <h2>${parse(today).toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long"})}${past?" · window closed":""}</h2>
   <div class="vs">
-    ${fighterCard(ME?.name, MYDAYS, true)}
-    ${RIVALUID ? fighterCard(RIVAL?.name, RIVALDAYS, false)
+    ${fighterCard(ME?.name, MYDAYS, MYPHOTOS, true)}
+    ${RIVALUID ? fighterCard(RIVAL?.name, RIVALDAYS, RIVALPHOTOS, false)
       : `<div class="fighter"><div class="nm"><span class="dot"></span>Waiting for opponent</div>
          <p class="tiny" style="margin-top:8px">Your friend hasn't signed in yet. Once he logs in once, he appears here permanently.</p></div>`}
   </div>
 
-  <h2>Log ${past?`<span style="color:var(--red)">— LATE, ${rupee(RULES.PENALTY)} on the line</span>`:"today"}</h2>
+  <h2>${editing ? `Backfilling ${fmtD(day)}` : `Log ${past?`<span style="color:var(--red)">— LATE, ${rupee(RULES.PENALTY)} on the line</span>`:"today"}`}</h2>
+  ${editing ? `<p class="tiny" style="margin:-4px 0 8px">Already scored as a miss. Logging it records the work but does <b>not</b> refund the ${rupee(RULES.PENALTY)} — late is late. <a href="#" id="backToToday">back to today →</a></p>` : ""}
   <div class="card">
     <div class="row">
       <div><label class="f">Problems</label><input type="number" id="inP" min="0" max="50" value="${mine.p||0}"></div>
@@ -463,26 +586,43 @@ function renderArena(){
       <div><label class="f">LC hard</label><input type="number" id="inH" min="0" value="${mine.lc?.h||0}"></div>
     </div>
     <div style="margin-top:12px">
-      <label class="f">Proof screenshot ${RULES.PHOTO_REQUIRED?"(required)":"(optional)"}</label>
-      <div class="drop" id="drop">${mine.photo||mine.hasProof ? "Proof on file — tap to replace" : "Tap to attach your LeetCode submissions screenshot"}</div>
-      <input type="file" id="file" accept="image/*" class="hide">
-      <img id="prev" class="proof hide" alt="preview">
+      <label class="f">Proof screenshots ${photoLabel}</label>
+      <div class="drop" id="drop">${totalSlots ? `${totalSlots}/${RULES.MAX_PHOTOS} attached — tap to add more` : "Tap to attach your LeetCode submission screenshots"}</div>
+      <input type="file" id="file" accept="image/*" multiple class="hide">
+      <div class="gallery" id="gal">
+        ${existingPhotos.map(ph=>`<div class="th"><img class="pv" src="${ph.url}" alt="saved"></div>`).join("")}
+        ${pendingPhotos.map((url,i)=>`<div class="th"><img class="pv" src="${url}" alt="pending"><button data-rmpending="${i}">×</button></div>`).join("")}
+      </div>
     </div>
     <div style="margin-top:12px">
       <label class="f">Note (your rival will read this)</label>
       <textarea id="inNote" rows="2" maxlength="200" placeholder="What you actually did.">${esc(mine.note||"")}</textarea>
     </div>
     <div class="row" style="margin-top:12px">
-      <button class="btn gold" id="subBtn">${valid(mine)?"Update today":"Lock in the day"}</button>
+      <button class="btn gold" id="subBtn">${editing ? `Lock in ${fmtD(day)}` : (valid(mine)?"Update today":"Lock in the day")}</button>
       <span class="tiny">Cutoff is ${RULES.DEADLINE_HOUR}:00 AM. Your device clock doesn't decide this — the server timestamp does.</span>
     </div>
   </div>
 
   ${backfill.length ? `<h2>Unfinished business</h2>
   <div class="card">
-    <p class="tiny" style="margin-top:0">These days are already scored against you. Logging them now records the work but does <b>not</b> refund the ${rupee(RULES.PENALTY)} — late is late.</p>
+    <p class="tiny" style="margin-top:0">These days are already scored against you. You can still log them for the record — it won't undo the penalty.</p>
     <div class="row">${backfill.map(d=>`<button class="btn" data-bf="${d}">Log ${fmtD(d)}</button>`).join("")}</div>
   </div>`:""}
+
+  <h2>Leave days</h2>
+  <div class="card">
+    <p class="tiny" style="margin-top:0">Each of you gets <b>${RULES.LEAVES_PER_MONTH} leave days a month</b>, resetting every calendar month. Mark one and no penalty lands on <b>you</b> that day, whatever you do or don't log. It's personal — it doesn't touch your rival's side, so if he misses on your leave day, he still owes. Can only be marked for today or a future day, never to undo a day that's already passed.</p>
+    <div class="row">
+      <input type="date" id="leaveDate" min="${today}" value="${today}">
+      <button class="btn" id="leaveBtn">Mark as leave</button>
+    </div>
+    <div class="st3" style="margin-top:10px">
+      <div><span class="lbl">you, ${myMonth}</span><b>${myLeaves}/${RULES.LEAVES_PER_MONTH}</b></div>
+      <div><span class="lbl">${esc(RIVAL?.name||"rival")}, ${myMonth}</span><b>${rivalLeaves}/${RULES.LEAVES_PER_MONTH}</b></div>
+    </div>
+    ${myUpcoming.length ? `<div class="tiny" style="margin-top:10px">Your marked leaves: ${myUpcoming.map(d=>`${fmtD(d)} <button class="btn dim" data-unleave="${d}" style="padding:1px 7px;font-size:10px;margin:0 6px 4px 2px">unmark</button>`).join("")}</div>`:""}
+  </div>
 
   <div class="card">
     <h3>The rules you both agreed to</h3>
@@ -490,7 +630,8 @@ function renderArena(){
       <li>A day counts only with <b>${RULES.MIN_PROBLEMS}+ problem</b>${RULES.PHOTO_REQUIRED?" <b>and</b> a proof screenshot":""}.</li>
       <li>Submissions for a day close at <b>${RULES.DEADLINE_HOUR}:00 AM the next morning</b>. Before 3 AM, you're still on yesterday.</li>
       <li>Miss a day your rival hit → you owe <b>${rupee(RULES.PENALTY)}</b>. Both miss → nobody pays. Both hit → nobody pays.</li>
-      <li>Proof photos are wiped ${RULES.FLUSH_AFTER_DAYS} day(s) later. The verdict survives; the screenshot doesn't.</li>
+      <li>Each of you can mark up to <b>${RULES.LEAVES_PER_MONTH} leave days a month</b> — no penalty on you that day, no matter what.</li>
+      <li>Proof photos are wiped ${RULES.FLUSH_AFTER_DAYS} day(s) later. The verdict survives; the screenshots don't.</li>
       <li>Neither of you can edit the other's entries. That's enforced by the database, not by this page.</li>
     </ul>
   </div>`;
@@ -499,21 +640,17 @@ function renderArena(){
   $("#inSD").onclick = e => { const b=e.currentTarget; const on=b.dataset.on==="1";
     b.dataset.on = on?"0":"1"; b.classList.toggle("on",!on); b.textContent = on?"not yet":"✓ done"; };
   $("#drop").onclick = () => $("#file").click();
-  $("#file").onchange = async ev => {
-    const f = ev.target.files[0]; if(!f) return;
-    $("#drop").textContent = "Compressing…";
-    try{
-      pendingPhoto = await compress(f);
-      $("#prev").src = pendingPhoto; $("#prev").classList.remove("hide");
-      $("#drop").textContent = `Attached · ${(pendingPhoto.length/1365).toFixed(0)} KB — tap to replace`;
-    }catch(e){ $("#drop").textContent="Couldn't read that image. Try a screenshot."; }
-  };
-  if(pendingPhoto){
-    $("#prev").src = pendingPhoto; $("#prev").classList.remove("hide");
-    $("#drop").textContent = `Attached · ${(pendingPhoto.length/1365).toFixed(0)} KB — tap to replace`;
-  }
-  $("#subBtn").onclick = () => submitDay(today);
-  document.querySelectorAll("[data-bf]").forEach(b => b.onclick = () => submitDay(b.dataset.bf));
+  $("#file").onchange = ev => { if(ev.target.files.length) addPendingFiles(ev.target.files); ev.target.value=""; };
+  document.querySelectorAll("[data-rmpending]").forEach(b=>b.onclick=()=>{ pendingPhotos.splice(Number(b.dataset.rmpending),1); render(); });
+  document.querySelectorAll(".pv").forEach(im=>im.onclick=()=>window.open(im.src,"_blank"));
+  $("#subBtn").onclick = () => submitDay(day);
+  document.querySelectorAll("[data-bf]").forEach(b => b.onclick = () => {
+    EDIT_DATE = b.dataset.bf; pendingPhotos = []; render();
+  });
+  const back = $("#backToToday");
+  if(back) back.onclick = ev => { ev.preventDefault(); EDIT_DATE = null; pendingPhotos = []; render(); };
+  $("#leaveBtn").onclick = () => { const d=$("#leaveDate").value; if(d) toggleLeave(d,true); };
+  document.querySelectorAll("[data-unleave]").forEach(b=>b.onclick=()=>toggleLeave(b.dataset.unleave,false));
 }
 
 function renderLedger(){
@@ -570,9 +707,10 @@ function renderLedger(){
   };
 }
 function badge(s){
-  if(s==="ok")   return `<span style="color:var(--green)">✓ hit</span>`;
-  if(s==="late") return `<span style="color:var(--gold)">late</span>`;
-  if(s==="no")   return `<span style="color:var(--red)">✗ missed</span>`;
+  if(s==="ok")    return `<span style="color:var(--green)">✓ hit</span>`;
+  if(s==="late")  return `<span style="color:var(--gold)">late</span>`;
+  if(s==="no")    return `<span style="color:var(--red)">✗ missed</span>`;
+  if(s==="leave") return `<span class="leave-txt">leave</span>`;
   return `<span class="zero">—</span>`;
 }
 
